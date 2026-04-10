@@ -1,25 +1,41 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
-using System;
-using UnityEditor.Experimental.GraphView;
-using UnityEditor.UIElements;
-using System.Threading;
+using System.Collections;
+using System.Collections.Generic;
+using Unity.VisualScripting;
+using UnityEngine.UI;
+using System.IO.MemoryMappedFiles;
 
 public class Player_Controller : MonoBehaviour
 {
     InputSystem_Actions playerActions;
     TextMeshProUGUI text;
     InputSystem_Actions.PlayerActions player_Actions;
+    Rigidbody rb;
+    [SerializeField] Slider slider;
     Vector2  player_Joystick_Left, player_Joystick_Right, player_Mouse_Position;
-    bool player_Back,player_Move_Left, player_Move_Right, player_Move_Up, player_Move_Down, player_Interact;      
-    float speed = 0f, joystick_speed = 0f, move_speed = 0f;
-    bool move_up, move_down, move_left, move_right;
+    bool player_Back,player_Move_Left, player_Move_Right, player_Move_Up, player_Move_Down, player_Interact;
+
+    bool r_joystick_right, r_joystick_left, r_joystick_move_up, r_joystick_move_down;
+    float joystick_move_speed = 0f, joystick_rot_h_speed = 0f;
+  
+    float speed = 0f, vSpeed = 0f, joystick_rot_v_speed = 0f, move_speed = 0f;
+
+    bool joystick_move_up, joystick_move_down, move_left, move_right;
+
     bool collided, player_control = true;
     string collidedObj;
+    [Header("Target Printer Interaction")]
+    public GameObject target;
+
+
+
     void Awake() {
         playerActions = new InputSystem_Actions();
         text = GameObject.Find("Text").GetComponent<TextMeshProUGUI>();
+        rb = GetComponent<Rigidbody>();
+
     }
     void OnEnable(){
         playerActions.Player.Enable();
@@ -46,14 +62,10 @@ public class Player_Controller : MonoBehaviour
         //add player grab animation
         PlayerInteract();
         
-        print("colliding: " + collided);
-
     }
     void SetVariables() {
         player_Mouse_Position = player_Actions.MousePosition.ReadValue<Vector2>();
 
-        player_Move_Left = player_Actions.Left.IsPressed();
-        player_Move_Right = player_Actions.Right.IsPressed();
         player_Move_Up = player_Actions.Up.IsPressed();
         player_Move_Down = player_Actions.Down.IsPressed();
 
@@ -66,9 +78,7 @@ public class Player_Controller : MonoBehaviour
     void PlayerInteract()
     {
         if (collided){
-            //lerp player to target position 
-            // transform.position = Vector3.Lerp(transform.position, targetPOS, Time.deltaTime * 2f);
-            // transform.position = targetPOS;
+           
            
             //play player grab animation
             Animator animator = GameObject.Find("Player").GetComponent<Animator>();
@@ -80,10 +90,14 @@ public class Player_Controller : MonoBehaviour
             if (player_Interact)
             {
                 animator.Play("Grab");
-                //set player rotation to target rotation
+                //lerp player to target position 
+                transform.position = Vector3.Lerp(transform.position, target.transform.position, Time.deltaTime * 2f);
+                transform.position = target.transform.position;
+                //lock rotation 
+                transform.rotation = target.transform.rotation;
+
                 //lock player rotation 
                 player_control = false;
-                // get moveable paper 
                 //get & play paper anim
                 paperAnim.Play("Wiggle");
 
@@ -92,8 +106,13 @@ public class Player_Controller : MonoBehaviour
                 if (Mouse.current.leftButton.isPressed) timer += Time.deltaTime;
 
                 if (timer > 2f) timer = 0f;
-                
-                if (player_Mouse_Position.y < 10f && timer < 2f)
+                //set slider as measurment of movement 
+                //if player is using controller 
+                var mappedValue = player_Joystick_Left.y * 10f;
+                //if player is using mouse input 
+
+                slider.value = mappedValue;
+                if (mappedValue == 10f && timer < 2f)
                 {
                     //play drag animation
                     animator.Play("Drag");
@@ -104,11 +123,7 @@ public class Player_Controller : MonoBehaviour
                 //if mouse position is at 1 within 1 sec, then paper breaks 
                 //exit player animation when not grabbing
             }
-            //get the mouse position within 1 sec 
-            text.text = ("Mouse Input: " + player_Mouse_Position.y);
-
-
-
+           
             if (player_Back)
             {
                 animator.Play("Idle");
@@ -120,52 +135,88 @@ public class Player_Controller : MonoBehaviour
         }
     }
     void PlayerMove() {
-         move_up = player_Move_Up || player_Joystick_Left.y > 0;
-         move_down = player_Move_Down || player_Joystick_Left.y < 0;
-        if (!move_left && !move_right)
+        var current_angle = transform.rotation.eulerAngles.y;
+        print(current_angle);
+        joystick_move_up = player_Joystick_Left.y > 0;
+         joystick_move_down = player_Joystick_Left.y < 0;
+        //if player isn't rotating 
+        if ((!move_left && !move_right) || (!r_joystick_right && !r_joystick_left))
         {
-            if (move_up)
+
+            //joystick movement controls
+            if (joystick_move_up)
+            {
+                joystick_move_speed =2f;
+
+            }
+            else if (joystick_move_down)
+            {
+                joystick_move_speed =-2f;
+            }
+            else {
+                joystick_move_speed = 0f;
+            }
+
+
+            //mouse movement controls 
+
+            //move the player forward 
+            if (player_Move_Up)
             {
                 move_speed = 2f;
             }
-            else if (move_down)
+            else if (player_Move_Down)
             {
                 move_speed = -2f;
             }
-            else if (!move_up && !move_down)
+            else if (!player_Move_Down && !player_Move_Up)
             {
                 move_speed = 0f;
             }
-            //lock player rotation on y axis when moving up
-
-            else if (move_up || move_down)
-            {
-                transform.rotation = Quaternion.Euler(transform.rotation.x, 0f, transform.rotation.z);
-
-            }
 
         }
-            transform.position = new Vector3(transform.position.x, transform.position.y, transform.position.z + move_speed);
+ 
+        //if (current_angle > 160f) { 
+        //    joystick_move_speed *= -1;
+        //}
+        //set position with speed applied
+        //grab rb
+            transform.position = new Vector3(transform.position.x, transform.position.y, transform.position.z + move_speed + joystick_move_speed);
 
         
     }
 
     void OnColliding()
     {
-        var Target_Col = new Vector3(215, 142.3f, 310f);
-        if (transform.position.z >= Target_Col.z) {
-            transform.position = Target_Col;
-        } if (transform.position.z <= Target_Col.z - 50f) {
-            collided = false;
+        if (transform.position.z >= 350f)
+        {
+            transform.position = new Vector3(transform.position.x,
+                                   transform.position.y, 350f);
         }
-
-        if (collided) { 
+        else if (transform.position.z <= 18f) {
+            transform.position = new Vector3(transform.position.x,
+                                  transform.position.y, 18f);
+        }
+        if (collidedObj != null)
+        {
+            //set text
             text.text = "Interact with " + collidedObj;
-        }else
-        { 
+        }
+        else
+        {
             text.text = " ";
         }
 
+    }
+    public void OnCollisionEnter(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("wall"))
+        {
+            collided = true;
+        }
+        else {
+            collided = false;
+        }
     }
     public void OnTriggerEnter(Collider col)
     {
@@ -180,41 +231,58 @@ public class Player_Controller : MonoBehaviour
         }
       }
     void PlayerLook() {
-        // use theta = tan ^-1 (y/x) to get the angle to rotate the camera to
-        var angle = Mathf.Atan2(player_Mouse_Position.y, player_Mouse_Position.x) * Mathf.Rad2Deg;
-        var joystickAngle = Mathf.Atan2(player_Joystick_Right.y, player_Joystick_Right.x) * Mathf.Rad2Deg;
-        
+
         //set bool for left and right inputs 
-        move_left = player_Move_Left || player_Joystick_Left.x < 0;
-        move_right = player_Move_Right || player_Joystick_Left.x > 0;
+        move_left = player_Mouse_Position.x <-0.5f;
+        move_right = player_Mouse_Position.x > 0.5f;
+  
+        r_joystick_left = player_Joystick_Right.x > 0.5f;
+        r_joystick_right = player_Joystick_Right.x < -0.5f;
 
-        //set camera to rotate based on y position 
-        angle *= -0.5f;
+        // Right joystick rotation
+        //if (r_joystick_move_up)
+        //{
+        //    joystick_rot_v_speed += 0.5f;
+        //}
+        //else if (r_joystick_move_down)
+        //{
+        //    joystick_rot_v_speed -= 0.5f;
+        //}
 
-        if (player_Joystick_Right.y < 0f)
+
+        if (r_joystick_left)
         {
-            joystick_speed += 2f;
+            joystick_rot_h_speed += 0.5f;
         }
-        else if(player_Joystick_Right.y > 0f){
-            joystick_speed -= 2f;
-        }
-
-        // track if player is moving left or right based on player_Move
-        if (!move_up || !move_down)
+        else if (r_joystick_right)
         {
-            if (move_left)
-            {
-                speed -= 2f;
-
-            }
-            else if (move_right)
-            {
-                speed += 2;
-
-            }
+            joystick_rot_h_speed -= 0.5f;
         }
+        
+        //mouse rotation
+         if (move_left)
+        {
+            speed -= 0.5f;
+
+        }
+        else if (move_right)
+        {
+            speed += 0.5f;
+
+        }
+        //if (!move_left && !move_right)
+        //{
+        //    if (player_Mouse_Position.y > 0.5f)
+        //    {
+        //        vSpeed += 2f;
+        //    }
+        //    else if (player_Mouse_Position.x < -0.5f)
+        //    {
+        //        vSpeed -= 2f;
+        //    }
+        //}
             //set rotation
-         transform.rotation = Quaternion.Euler(transform.rotation.x + angle + joystick_speed, transform.rotation.y + speed, 0f);
+            transform.rotation = Quaternion.Euler(transform.rotation.x + vSpeed + joystick_rot_v_speed, transform.rotation.y + speed +joystick_rot_h_speed, 0f);
         
        }
 
